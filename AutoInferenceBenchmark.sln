@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.4.11519.219 insiders
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoInferenceBenchmark", "AutoInferenceBenchmark\AutoInferenceBenchmark.csproj", "{88FF6169-6E8C-48C8-AE51-F02BB39CA503}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LLamaSharp", "LLamaSharp\LLamaSharp.csproj", "{AAF30F1E-8D3A-1B99-07C8-8EE8784E192F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{88FF6169-6E8C-48C8-AE51-F02BB39CA503}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88FF6169-6E8C-48C8-AE51-F02BB39CA503}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88FF6169-6E8C-48C8-AE51-F02BB39CA503}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88FF6169-6E8C-48C8-AE51-F02BB39CA503}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AAF30F1E-8D3A-1B99-07C8-8EE8784E192F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AAF30F1E-8D3A-1B99-07C8-8EE8784E192F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AAF30F1E-8D3A-1B99-07C8-8EE8784E192F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AAF30F1E-8D3A-1B99-07C8-8EE8784E192F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {948BD49F-D110-4F5A-8AA3-7A604CCA93FF}
+	EndGlobalSection
+EndGlobal
