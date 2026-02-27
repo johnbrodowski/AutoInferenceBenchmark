@@ -83,7 +83,7 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
                 Seed = config.Seed
             },
             MaxTokens = config.MaxTokens,
-            AntiPrompts = new[] { "[INST]" }
+            AntiPrompts = GetAntiPrompts()
         };
 
         var responseBuilder = new StringBuilder();
@@ -128,7 +128,7 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
         catch (OperationCanceledException) { }
 
         var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-        var responseText = responseBuilder.ToString().Trim();
+        var responseText = StripThinkingTags(responseBuilder.ToString().Trim());
         return new InferenceResult
         {
             ResponseText = responseText,
@@ -160,11 +160,74 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
 
     /// <summary>Returns the auto-detected prompt formatter, or null if model not loaded.</summary>
     public IPromptFormatter? GetFormatter() => _formatter;
+
+    /// <summary>
+    /// Returns template-specific anti-prompts that won't false-trigger on thinking content.
+    /// </summary>
+    private string[] GetAntiPrompts()
+    {
+        if (_formatter == null)
+            return new[] { "[INST]" };
+
+        return _formatter.Format switch
+        {
+            TemplateFormat.Llama2 or TemplateFormat.Mistral
+                => new[] { "[INST]" },
+            TemplateFormat.Alpaca
+                => new[] { "### Instruction:", "### Response:" },
+            TemplateFormat.Vicuna
+                => new[] { "USER:", "ASSISTANT:" },
+            TemplateFormat.ChatML or TemplateFormat.Qwen or TemplateFormat.DeepSeek
+                => new[] { "<|im_start|>user", "<|im_end|>" },
+            TemplateFormat.Llama3
+                => new[] { "<|eot_id|>" },
+            TemplateFormat.Phi
+                => new[] { "<|end|>", "<|user|>" },
+            TemplateFormat.Gemma
+                => new[] { "<end_of_turn>" },
+            TemplateFormat.Zephyr
+                => new[] { "</s>", "<|user|>" },
+            TemplateFormat.CommandR
+                => new[] { "<|END_OF_TURN_TOKEN|>" },
+            _ => new[] { "[INST]" }
+        };
+    }
+
+    /// <summary>
+    /// Splits streaming text at a thinking/response boundary.
+    /// Detects: &lt;think&gt;...&lt;/think&gt;, &lt;|thinking|&gt;...&lt;|/thinking|&gt;,
+    /// and the "assistant final" / "final" keyword markers.
+    /// </summary>
     private static (string thinking, string response)? TrySplitAtFinalChannel(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return null;
 
+        // ── Check for </think> close tag (DeepSeek R1, QwQ, etc.) ──
+        int thinkClose = text.IndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+        if (thinkClose >= 0)
+        {
+            var thinking = text[..thinkClose];
+            var response = text[(thinkClose + "</think>".Length)..];
+            int thinkOpen = thinking.IndexOf("<think>", StringComparison.OrdinalIgnoreCase);
+            if (thinkOpen >= 0)
+                thinking = thinking[(thinkOpen + "<think>".Length)..];
+            return (thinking.Trim(), response.TrimStart());
+        }
+
+        // ── Check for <|/thinking|> close tag ──
+        int thinkClose2 = text.IndexOf("<|/thinking|>", StringComparison.OrdinalIgnoreCase);
+        if (thinkClose2 >= 0)
+        {
+            var thinking = text[..thinkClose2];
+            var response = text[(thinkClose2 + "<|/thinking|>".Length)..];
+            int thinkOpen2 = thinking.IndexOf("<|thinking|>", StringComparison.OrdinalIgnoreCase);
+            if (thinkOpen2 >= 0)
+                thinking = thinking[(thinkOpen2 + "<|thinking|>".Length)..];
+            return (thinking.Trim(), response.TrimStart());
+        }
+
+        // ── Check for "assistant final" keyword ──
         int search = 0;
         while (search < text.Length)
         {
@@ -189,6 +252,7 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
             search = aIdx + 1;
         }
 
+        // ── Check for standalone "final" keyword ──
         search = 0;
         while (search < text.Length)
         {
@@ -209,6 +273,51 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Post-processing safety net: strips any remaining thinking blocks from the response.
+    /// </summary>
+    private static string StripThinkingTags(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return text ?? "";
+
+        var result = text;
+
+        // Strip <think>...</think> blocks
+        while (true)
+        {
+            int openIdx = result.IndexOf("<think>", StringComparison.OrdinalIgnoreCase);
+            if (openIdx < 0) break;
+
+            int closeIdx = result.IndexOf("</think>", openIdx, StringComparison.OrdinalIgnoreCase);
+            if (closeIdx < 0)
+            {
+                result = result[..openIdx];
+                break;
+            }
+
+            result = result[..openIdx] + result[(closeIdx + "</think>".Length)..];
+        }
+
+        // Strip <|thinking|>...<|/thinking|> blocks
+        while (true)
+        {
+            int openIdx = result.IndexOf("<|thinking|>", StringComparison.OrdinalIgnoreCase);
+            if (openIdx < 0) break;
+
+            int closeIdx = result.IndexOf("<|/thinking|>", openIdx, StringComparison.OrdinalIgnoreCase);
+            if (closeIdx < 0)
+            {
+                result = result[..openIdx];
+                break;
+            }
+
+            result = result[..openIdx] + result[(closeIdx + "<|/thinking|>".Length)..];
+        }
+
+        return result.Trim();
     }
 
     private void ResetExecutor()
