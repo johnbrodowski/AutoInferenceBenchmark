@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using AutoInferenceBenchmark.Benchmark;
 using AutoInferenceBenchmark.Clients;
 using AutoInferenceBenchmark.Core;
@@ -60,26 +61,36 @@ public sealed class BenchmarkPanel : Panel
     /// Func that returns the current model path from the main form.
     /// Set by Form1 after construction.
     /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    [Browsable(false)]
     public Func<string>? GetModelPath { get; set; }
 
     /// <summary>
     /// Func that returns the current system prompt from the main form.
     /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    [Browsable(false)]
     public Func<string>? GetSystemPrompt { get; set; }
 
     /// <summary>
     /// Func that returns current threads setting from the main form.
     /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    [Browsable(false)]
     public Func<int>? GetThreads { get; set; }
 
     /// <summary>
     /// Func that returns current context size setting from the main form.
     /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    [Browsable(false)]
     public Func<int>? GetContextSize { get; set; }
 
     /// <summary>
     /// Func that returns current reasoning effort setting from the main form.
     /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    [Browsable(false)]
     public Func<string>? GetReasoningEffort { get; set; }
 
     public BenchmarkPanel()
