@@ -83,10 +83,10 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
                 Seed = config.Seed
             },
             MaxTokens = config.MaxTokens,
-            AntiPrompts = new[] { "[INST]", "User:", "<|end|>", "<|im_end|>", "<|eot_id|>" }
+            AntiPrompts = new[] { "[INST]" }
         };
 
-        var sb = new StringBuilder();
+        var responseBuilder = new StringBuilder();
         int tokenCount = 0;
         var startTime = DateTime.UtcNow;
         DateTime? firstTokenTime = null;
@@ -95,19 +95,40 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
         {
             await Task.Run(async () =>
             {
+                var pending = new StringBuilder();
+                bool inFinalChannel = false;
+
                 await foreach (var tok in _executor.InferAsync(formattedPrompt + Environment.NewLine, inferenceParams)
                     .WithCancellation(token))
                 {
-                    sb.Append(tok);
                     tokenCount++;
                     firstTokenTime ??= DateTime.UtcNow;
+
+                    if (inFinalChannel)
+                    {
+                        responseBuilder.Append(tok);
+                        continue;
+                    }
+
+                    pending.Append(tok);
+                    var split = TrySplitAtFinalChannel(pending.ToString());
+                    if (split.HasValue)
+                    {
+                        inFinalChannel = true;
+                        if (split.Value.response.Length > 0)
+                            responseBuilder.Append(split.Value.response);
+                        pending.Clear();
+                    }
                 }
+
+                if (!inFinalChannel && pending.Length > 0)
+                    responseBuilder.Append(pending.ToString());
             }, token);
         }
         catch (OperationCanceledException) { }
 
         var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-        var responseText = ExtractFinalChannelResponse(sb.ToString().Trim());
+        var responseText = responseBuilder.ToString().Trim();
         return new InferenceResult
         {
             ResponseText = responseText,
@@ -139,10 +160,10 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
 
     /// <summary>Returns the auto-detected prompt formatter, or null if model not loaded.</summary>
     public IPromptFormatter? GetFormatter() => _formatter;
-    private static string ExtractFinalChannelResponse(string text)
+    private static (string thinking, string response)? TrySplitAtFinalChannel(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return text;
+            return null;
 
         int search = 0;
         while (search < text.Length)
@@ -162,7 +183,7 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
                 int responseStart = fIdx + 5;
                 while (responseStart < text.Length && char.IsWhiteSpace(text[responseStart]))
                     responseStart++;
-                return text[responseStart..].Trim();
+                return (text[..aIdx].TrimEnd(), text[responseStart..]);
             }
 
             search = aIdx + 1;
@@ -181,13 +202,13 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
                 int responseStart = fIdx + 5;
                 while (responseStart < text.Length && char.IsWhiteSpace(text[responseStart]))
                     responseStart++;
-                return text[responseStart..].Trim();
+                return (text[..fIdx].TrimEnd(), text[responseStart..]);
             }
 
             search = fIdx + 1;
         }
 
-        return text;
+        return null;
     }
 
     private void ResetExecutor()
