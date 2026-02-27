@@ -303,4 +303,4 @@ At present these are foundational components and not yet fully wired into the ac
 
 ## License
 
-This repository includes license files at root (`LICENSE`, `LICENSE.txt`).
+MIT
