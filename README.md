@@ -14,6 +14,11 @@ It is designed as a practical control layer around inference, with emphasis on:
 
 ---
 
+<img width="991" height="657" alt="image" src="https://github.com/user-attachments/assets/e76f5658-bf37-4f57-829c-4476e9875cfa" />
+
+
+---
+
 ## Table of Contents
 
 - [Architecture at a Glance](#architecture-at-a-glance)
