@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.26.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.3" />
   </ItemGroup>
 
   <ItemGroup>

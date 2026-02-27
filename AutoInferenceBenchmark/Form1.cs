@@ -1,5 +1,6 @@
 using ApexUIBridge.Models;
 
+using AutoInferenceBenchmark.Core;
 using AutoInferenceBenchmark.Forms;
 using AutoInferenceBenchmark.LlamaSharpAI;
 
@@ -25,9 +26,23 @@ namespace AutoInferenceBenchmark
 
         private AiSettings _aiSettings = new();
 
+        private BenchmarkPanel? _benchmarkPanel;
+
         public Form1()
         {
             InitializeComponent();
+
+            // Add BenchmarkPanel to the benchmark tab
+            _benchmarkPanel = new BenchmarkPanel
+            {
+                GetModelPath = () => _aiModelPathBox.Text.Trim(),
+                GetSystemPrompt = () => _aiSystemBox.Text,
+                GetThreads = () => _aiSettings.Threads,
+                GetContextSize = () => _aiSettings.ContextSize
+            };
+            _benchmarkPanel.ApplyConfigRequested += OnApplyBenchmarkConfig;
+            _benchmarkTabPage.Controls.Add(_benchmarkPanel);
+
             WireEvents();
 
             var path = Path.GetDirectoryName(
@@ -45,6 +60,14 @@ namespace AutoInferenceBenchmark
             ApplySettingsToUI();
 
             SetupProviderCombo();
+        }
+
+        private void OnApplyBenchmarkConfig(object? sender, InferenceConfig config)
+        {
+            _aiSettings.Temperature = config.Temperature;
+            SaveSettings();
+            ApplySettingsToUI();
+            _aiStatusLabel.Text = $"Applied benchmark config: {config.ToShortString()}";
         }
 
         private void SetupProviderCombo()

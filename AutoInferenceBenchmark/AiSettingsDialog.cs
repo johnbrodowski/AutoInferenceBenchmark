@@ -15,10 +15,6 @@ public sealed class AiSettingsDialog : Form
     private Panel _modelPathPanel = new();
     private TextBox _modelPathBox = new();
     private Button _browseModelBtn = new();
-    private Label _lblApiKey = new();
-    private TextBox _apiKeyBox = new();
-    private Label _lblAnthropicModel = new();
-    private ComboBox _anthropicModelCombo = new();
 
     // Inference group
     private NumericUpDown _tempSpinner = new();
@@ -92,9 +88,6 @@ public sealed class AiSettingsDialog : Form
         // ── scrollable content ───────────────────────────────────────────────
         var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
 
-        // Single-column TableLayoutPanel with Dock=Top fills the scroll panel width
-        // automatically — no manual width sync needed. Each section gets Dock=Fill
-        // so it expands to the full column width on every resize.
         var outer = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
@@ -133,11 +126,10 @@ public sealed class AiSettingsDialog : Form
     private GroupBox BuildBackendGroup()
     {
         var gb = MakeGroupBox("Backend");
-        var t = MakeTable(4);
+        var t = MakeTable(2);
 
         _providerCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
-        _providerCombo.Items.AddRange(new object[] { /*"Anthropic",*/ "LlamaSharp (Local)", "LlamaSharp Instruct (Local)" });
-        _providerCombo.SelectedIndexChanged += (_, _) => UpdateBackendVisibility();
+        _providerCombo.Items.AddRange(new object[] { "LlamaSharp (Local)", "LlamaSharp Instruct (Local)" });
         AddRow(t, MakeLabel("Provider:"), _providerCombo);
 
         // Model path row: textbox + browse button side by side
@@ -156,21 +148,6 @@ public sealed class AiSettingsDialog : Form
         };
         AddRow(t, _lblModelPath, _modelPathPanel);
 
-        _lblApiKey = MakeLabel("API Key:");
-        _apiKeyBox = new TextBox { UseSystemPasswordChar = true, Dock = DockStyle.Fill };
-        AddRow(t, _lblApiKey, _apiKeyBox);
-
-        _lblAnthropicModel = MakeLabel("Claude Model:");
-        
-        _anthropicModelCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
-        
-        _anthropicModelCombo.Items.AddRange(new object[]
-        {
-            "claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929", "claude-opus-4-1-20250805"
-        });
-
-        AddRow(t, _lblAnthropicModel, _anthropicModelCombo);
-
         gb.Controls.Add(t);
         return gb;
     }
@@ -188,9 +165,7 @@ public sealed class AiSettingsDialog : Form
         AddRow(t, MakeLabel("Temperature:"), _tempSpinner);
 
         _reasoningCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
-      
-        _reasoningCombo.Items.AddRange(new object[] { /*"",*/ "low", "medium", "high" });
-      
+        _reasoningCombo.Items.AddRange(new object[] { "low", "medium", "high" });
         AddRow(t, MakeLabel("Reasoning:"), _reasoningCombo);
 
         _maxTokensSpinner = new NumericUpDown
@@ -337,22 +312,6 @@ public sealed class AiSettingsDialog : Form
         t.Controls.Add(input);
     }
 
-    // ── backend visibility ───────────────────────────────────────────────────
-
-    private void UpdateBackendVisibility()
-    {
-        var provider = _providerCombo.SelectedItem?.ToString() ?? "";
-        bool isLlama = provider is "LlamaSharp (Local)" or "LlamaSharp Instruct (Local)";
-        bool isAnthropic = provider == "Anthropic";
-
-        _lblModelPath.Visible = isLlama;
-        _modelPathPanel.Visible = isLlama;
-        _lblApiKey.Visible = isAnthropic;
-        _apiKeyBox.Visible = isAnthropic;
-        _lblAnthropicModel.Visible = isAnthropic;
-        _anthropicModelCombo.Visible = isAnthropic;
-    }
-
     private void OnBrowseModel(object? sender, EventArgs e)
     {
         using var dlg = new OpenFileDialog
@@ -376,10 +335,6 @@ public sealed class AiSettingsDialog : Form
         _providerCombo.SelectedIndex = provIdx >= 0 ? provIdx : 0;
 
         _modelPathBox.Text = _settings.ModelPath;
-        _apiKeyBox.Text = _settings.AnthropicApiKey;
-
-        int modelIdx = _anthropicModelCombo.Items.IndexOf(_settings.AnthropicModel);
-        _anthropicModelCombo.SelectedIndex = modelIdx >= 0 ? modelIdx : 0;
 
         _tempSpinner.Value = (decimal)Math.Clamp(_settings.Temperature, 0f, 2f);
 
@@ -397,16 +352,12 @@ public sealed class AiSettingsDialog : Form
         _showThinkingChk.Checked = _settings.ShowThinking;
         _autoExecChk.Checked = _settings.AutoExec;
         _systemPromptBox.Text = _settings.SystemPrompt;
-
-        UpdateBackendVisibility();
     }
 
     public void SaveToSettings()
     {
         _settings.Provider = _providerCombo.SelectedItem?.ToString() ?? "LlamaSharp Instruct (Local)";
         _settings.ModelPath = _modelPathBox.Text.Trim();
-        _settings.AnthropicApiKey = _apiKeyBox.Text.Trim();
-        _settings.AnthropicModel = _anthropicModelCombo.SelectedItem?.ToString() ?? "claude-haiku-4-5-20251001";
         _settings.Temperature = (float)_tempSpinner.Value;
         _settings.ReasoningEffort = _reasoningCombo.SelectedItem?.ToString() ?? "";
         _settings.MaxTokens = (int)_maxTokensSpinner.Value;

@@ -1,0 +1,164 @@
+using System.Text;
+using AutoInferenceBenchmark.Core;
+using AutoInferenceBenchmark.Templates;
+using LLama;
+using LLama.Common;
+using LLama.Sampling;
+using LLama.Transformers;
+
+namespace AutoInferenceBenchmark.Clients;
+
+/// <summary>
+/// Adapts <see cref="LLama.ChatSession"/> (InteractiveExecutor) into the
+/// <see cref="IInferenceClient"/> interface for benchmark use.
+/// Creates a fresh sampling pipeline per inference call to apply the exact config.
+/// </summary>
+public sealed class LlamaSharpChatAdapter : IInferenceClient
+{
+    private LLamaWeights? _model;
+    private LLamaContext? _context;
+    private ChatSession? _session;
+    private string _loadedModelPath = "";
+    private string _systemPrompt = "";
+    private IPromptFormatter? _formatter;
+
+    public bool IsLoaded => _model != null && _session != null;
+
+    public async Task LoadModelAsync(string modelPath, string systemPrompt, int threads = 10, int contextSize = 4096)
+    {
+        if (_model != null && _loadedModelPath == modelPath && _session != null)
+        {
+            _systemPrompt = systemPrompt;
+            return;
+        }
+
+        await Task.Run(() =>
+        {
+            DisposeModel();
+            _loadedModelPath = modelPath;
+            _systemPrompt = systemPrompt;
+
+            var parameters = new ModelParams(modelPath)
+            {
+                ContextSize = (uint)contextSize,
+                Threads = threads
+            };
+
+            _model = LLamaWeights.LoadFromFile(parameters);
+            _context = _model.CreateContext(parameters);
+
+            // Detect template format from model metadata
+            var format = ChatTemplateParser.DetectFormat(_model.Metadata);
+            _formatter = ChatTemplateParser.GetFormatter(format);
+
+            ResetSession();
+        });
+    }
+
+    public async Task<InferenceResult> RunInferenceAsync(string prompt, InferenceConfig config, CancellationToken ct = default)
+    {
+        if (_session == null || _context == null)
+            throw new InvalidOperationException("Model not loaded. Call LoadModelAsync first.");
+
+        // Reset conversation for benchmark isolation
+        ResetSession();
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var token = cts.Token;
+
+        var inferenceParams = new InferenceParams
+        {
+            SamplingPipeline = new DefaultSamplingPipeline
+            {
+                Temperature = config.Temperature,
+                TopP = config.TopP,
+                TopK = config.TopK,
+                MinP = config.MinP,
+                RepeatPenalty = config.RepeatPenalty,
+                FrequencyPenalty = config.FrequencyPenalty,
+                PresencePenalty = config.PresencePenalty,
+                Seed = config.Seed
+            },
+            MaxTokens = config.MaxTokens,
+            AntiPrompts = new[] { "User:", "<|end|>", "<|im_end|>", "<|eot_id|>", "<end_of_turn>" }
+        };
+
+        var sb = new StringBuilder();
+        int tokenCount = 0;
+        var startTime = DateTime.UtcNow;
+        DateTime? firstTokenTime = null;
+
+        try
+        {
+            await Task.Run(async () =>
+            {
+                await foreach (var tok in _session.ChatAsync(
+                    new ChatHistory.Message(AuthorRole.User, prompt), inferenceParams)
+                    .WithCancellation(token))
+                {
+                    sb.Append(tok);
+                    tokenCount++;
+                    firstTokenTime ??= DateTime.UtcNow;
+                }
+            }, token);
+        }
+        catch (OperationCanceledException) { }
+
+        var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
+        return new InferenceResult
+        {
+            ResponseText = sb.ToString().Trim(),
+            TokenCount = tokenCount,
+            TokensPerSecond = elapsed > 0 ? tokenCount / (float)elapsed : 0f,
+            TimeToFirstTokenSeconds = firstTokenTime.HasValue
+                ? (float)(firstTokenTime.Value - startTime).TotalSeconds : 0f,
+            TotalLatencySeconds = elapsed,
+            Config = config
+        };
+    }
+
+    public void ResetConversation(string systemPrompt)
+    {
+        _systemPrompt = systemPrompt;
+        if (_model != null && _context != null)
+            ResetSession();
+    }
+
+    public string? GetChatTemplate()
+    {
+        if (_model == null) return null;
+        _model.Metadata.TryGetValue("tokenizer.chat_template", out var template);
+        return template;
+    }
+
+    public IReadOnlyDictionary<string, string> GetModelMetadata() =>
+        _model?.Metadata ?? new Dictionary<string, string>();
+
+    /// <summary>Returns the auto-detected prompt formatter, or null if model not loaded.</summary>
+    public IPromptFormatter? GetFormatter() => _formatter;
+
+    private void ResetSession()
+    {
+        var executor = new InteractiveExecutor(_context!);
+        var chatHistory = new ChatHistory();
+        if (!string.IsNullOrWhiteSpace(_systemPrompt))
+            chatHistory.AddMessage(AuthorRole.System, _systemPrompt);
+
+        _session = new ChatSession(executor, chatHistory);
+        _session.WithHistoryTransform(new PromptTemplateTransformer(_model!, withAssistant: true));
+        _session.WithOutputTransform(new LLamaTransforms.KeywordTextOutputStreamTransform(
+            ["User:", "\ufffd"], redundancyLength: 5));
+    }
+
+    private void DisposeModel()
+    {
+        _session = null;
+        _context?.Dispose();
+        _context = null;
+        _model?.Dispose();
+        _model = null;
+        _formatter = null;
+    }
+
+    public void Dispose() => DisposeModel();
+}
