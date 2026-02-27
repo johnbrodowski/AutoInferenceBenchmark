@@ -80,10 +80,10 @@ public sealed class LlamaSharpChatAdapter : IInferenceClient
                 Seed = config.Seed
             },
             MaxTokens = config.MaxTokens,
-            AntiPrompts = new[] { "User:", "<|end|>", "<|im_end|>", "<|eot_id|>", "<end_of_turn>" }
+            AntiPrompts = new[] { "User:" }
         };
 
-        var sb = new StringBuilder();
+        var responseBuilder = new StringBuilder();
         int tokenCount = 0;
         var startTime = DateTime.UtcNow;
         DateTime? firstTokenTime = null;
@@ -92,22 +92,44 @@ public sealed class LlamaSharpChatAdapter : IInferenceClient
         {
             await Task.Run(async () =>
             {
+                var pending = new StringBuilder();
+                bool inFinalChannel = false;
+
                 await foreach (var tok in _session.ChatAsync(
                     new ChatHistory.Message(AuthorRole.User, prompt), inferenceParams)
                     .WithCancellation(token))
                 {
-                    sb.Append(tok);
                     tokenCount++;
                     firstTokenTime ??= DateTime.UtcNow;
+
+                    if (inFinalChannel)
+                    {
+                        responseBuilder.Append(tok);
+                        continue;
+                    }
+
+                    pending.Append(tok);
+                    var split = TrySplitAtFinalChannel(pending.ToString());
+                    if (split.HasValue)
+                    {
+                        inFinalChannel = true;
+                        if (split.Value.response.Length > 0)
+                            responseBuilder.Append(split.Value.response);
+                        pending.Clear();
+                    }
                 }
+
+                if (!inFinalChannel && pending.Length > 0)
+                    responseBuilder.Append(pending.ToString());
             }, token);
         }
         catch (OperationCanceledException) { }
 
         var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
+        var responseText = responseBuilder.ToString().Trim();
         return new InferenceResult
         {
-            ResponseText = sb.ToString().Trim(),
+            ResponseText = responseText,
             TokenCount = tokenCount,
             TokensPerSecond = elapsed > 0 ? tokenCount / (float)elapsed : 0f,
             TimeToFirstTokenSeconds = firstTokenTime.HasValue
@@ -136,6 +158,56 @@ public sealed class LlamaSharpChatAdapter : IInferenceClient
 
     /// <summary>Returns the auto-detected prompt formatter, or null if model not loaded.</summary>
     public IPromptFormatter? GetFormatter() => _formatter;
+    private static (string thinking, string response)? TrySplitAtFinalChannel(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        int search = 0;
+        while (search < text.Length)
+        {
+            int aIdx = text.IndexOf("assistant", search, StringComparison.OrdinalIgnoreCase);
+            if (aIdx < 0) break;
+
+            int fIdx = aIdx + "assistant".Length;
+            while (fIdx < text.Length && char.IsWhiteSpace(text[fIdx]))
+                fIdx++;
+
+            bool finalFits = fIdx + 5 <= text.Length;
+            bool finalMatch = finalFits && string.Compare(text, fIdx, "final", 0, 5, StringComparison.OrdinalIgnoreCase) == 0;
+            bool finalEnd = !finalFits || fIdx + 5 >= text.Length || !char.IsLetter(text[fIdx + 5]);
+            if (finalMatch && finalEnd)
+            {
+                int responseStart = fIdx + 5;
+                while (responseStart < text.Length && char.IsWhiteSpace(text[responseStart]))
+                    responseStart++;
+                return (text[..aIdx].TrimEnd(), text[responseStart..]);
+            }
+
+            search = aIdx + 1;
+        }
+
+        search = 0;
+        while (search < text.Length)
+        {
+            int fIdx = text.IndexOf("final", search, StringComparison.OrdinalIgnoreCase);
+            if (fIdx < 0) break;
+
+            bool validBefore = fIdx == 0 || !char.IsLetter(text[fIdx - 1]);
+            bool validAfter = fIdx + 5 >= text.Length || !char.IsLetter(text[fIdx + 5]);
+            if (validBefore && validAfter)
+            {
+                int responseStart = fIdx + 5;
+                while (responseStart < text.Length && char.IsWhiteSpace(text[responseStart]))
+                    responseStart++;
+                return (text[..fIdx].TrimEnd(), text[responseStart..]);
+            }
+
+            search = fIdx + 1;
+        }
+
+        return null;
+    }
 
     private void ResetSession()
     {
