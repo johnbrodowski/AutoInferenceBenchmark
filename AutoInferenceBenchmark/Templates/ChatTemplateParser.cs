@@ -44,6 +44,12 @@ public static class ChatTemplateParser
             t.Contains("<|begin▁of▁sentence|>", StringComparison.Ordinal))
             return TemplateFormat.DeepSeek;
 
+        // OpenAI gpt-oss — uses <|start|>role<|channel|>/<|message|>/<|end|>
+        if (t.Contains("<|start|>", StringComparison.OrdinalIgnoreCase) &&
+            t.Contains("<|message|>", StringComparison.OrdinalIgnoreCase) &&
+            t.Contains("<|end|>", StringComparison.OrdinalIgnoreCase))
+            return TemplateFormat.GptOss;
+
         // Qwen — uses <|im_start|> but often has "qwen" in metadata or uses qwen-specific system handling
         // Note: Qwen uses ChatML format so we check for qwen-specific indicators first
         if (t.Contains("qwen", StringComparison.OrdinalIgnoreCase) &&
@@ -102,6 +108,7 @@ public static class ChatTemplateParser
         TemplateFormat.CommandR => new PromptFormatters.CommandRFormatter(),
         TemplateFormat.DeepSeek => new PromptFormatters.ChatMLFormatter(), // DeepSeek uses ChatML-compatible format
         TemplateFormat.Qwen => new PromptFormatters.ChatMLFormatter(), // Qwen uses ChatML format
+        TemplateFormat.GptOss => new PromptFormatters.GenericFormatter(), // rely on model template transform; used for anti-prompt selection
         _ => new PromptFormatters.GenericFormatter()
     };
 
