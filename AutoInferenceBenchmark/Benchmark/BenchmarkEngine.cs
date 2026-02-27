@@ -137,6 +137,10 @@ public sealed class BenchmarkEngine
                         TotalCount = totalRuns,
                         BestScoreSoFar = bestAvgScore,
                         CurrentScore = score.MatchPercentage,
+                        CurrentIsPass = score.IsPass,
+                        CurrentTokensPerSecond = inferenceResult.TokensPerSecond,
+                        CurrentTimeToFirstToken = inferenceResult.TimeToFirstTokenSeconds,
+                        CurrentLatency = (float)inferenceResult.TotalLatencySeconds,
                         ElapsedTime = elapsed,
                         EstimatedTimeRemaining = eta
                     });

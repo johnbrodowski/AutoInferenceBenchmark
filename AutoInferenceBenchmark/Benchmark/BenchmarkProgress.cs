@@ -13,6 +13,10 @@ public sealed record BenchmarkProgress
     public int TotalCount { get; init; }
     public float BestScoreSoFar { get; init; }
     public float CurrentScore { get; init; }
+    public bool CurrentIsPass { get; init; }
+    public float CurrentTokensPerSecond { get; init; }
+    public float CurrentTimeToFirstToken { get; init; }
+    public float CurrentLatency { get; init; }
     public TimeSpan ElapsedTime { get; init; }
     public TimeSpan? EstimatedTimeRemaining { get; init; }
 

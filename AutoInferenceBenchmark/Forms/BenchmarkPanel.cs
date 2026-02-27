@@ -650,8 +650,10 @@ public sealed class BenchmarkPanel : Panel
             p.CurrentConfig.ToShortString(),
             p.CurrentTestCaseName,
             p.CurrentScore,
-            p.CurrentScore >= 50 ? "Yes" : "No",
-            0f, 0f, 0f);
+            p.CurrentIsPass ? "Yes" : "No",
+            p.CurrentTokensPerSecond,
+            p.CurrentTimeToFirstToken,
+            p.CurrentLatency);
     }
 
     private void ShowSummary(BenchmarkRunSummary summary)
