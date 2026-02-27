@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using AutoInferenceBenchmark.Core;
 using AutoInferenceBenchmark.Templates;
@@ -86,7 +87,11 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
             AntiPrompts = GetAntiPrompts()
         };
 
+        Debug.WriteLine($"[Benchmark:Instruct] ── Formatted prompt ──\n{formattedPrompt}");
+        Debug.WriteLine($"[Benchmark:Instruct] AntiPrompts: [{string.Join(", ", inferenceParams.AntiPrompts ?? Array.Empty<string>())}]");
+
         var responseBuilder = new StringBuilder();
+        var rawBuilder = new StringBuilder();
         int tokenCount = 0;
         var startTime = DateTime.UtcNow;
         DateTime? firstTokenTime = null;
@@ -103,6 +108,7 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
                 {
                     tokenCount++;
                     firstTokenTime ??= DateTime.UtcNow;
+                    rawBuilder.Append(tok);
 
                     if (inFinalChannel)
                     {
@@ -115,6 +121,7 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
                     if (split.HasValue)
                     {
                         inFinalChannel = true;
+                        Debug.WriteLine($"[Benchmark:Instruct] ── Thinking split detected ──\n  Thinking: {Truncate(split.Value.thinking, 200)}\n  Response start: {Truncate(split.Value.response, 200)}");
                         if (split.Value.response.Length > 0)
                             responseBuilder.Append(split.Value.response);
                         pending.Clear();
@@ -127,8 +134,15 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
         }
         catch (OperationCanceledException) { }
 
+        Debug.WriteLine($"[Benchmark:Instruct] ── Raw model output ({tokenCount} tokens) ──\n{rawBuilder}");
+
         var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-        var responseText = StripThinkingTags(responseBuilder.ToString().Trim());
+        var beforeStrip = responseBuilder.ToString().Trim();
+        var responseText = StripThinkingTags(beforeStrip);
+        if (beforeStrip != responseText)
+            Debug.WriteLine($"[Benchmark:Instruct] ── After StripThinkingTags ──\n{responseText}");
+        Debug.WriteLine($"[Benchmark:Instruct] ── Final response for scoring ──\n{responseText}");
+
         return new InferenceResult
         {
             ResponseText = responseText,
@@ -367,4 +381,7 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
     }
 
     public void Dispose() => DisposeModel();
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..max] + "...";
 }

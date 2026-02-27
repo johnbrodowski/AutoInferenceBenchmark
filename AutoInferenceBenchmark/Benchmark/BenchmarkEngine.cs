@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AutoInferenceBenchmark.Core;
 using AutoInferenceBenchmark.Scoring;
 using AutoInferenceBenchmark.Storage;
@@ -64,6 +65,12 @@ public sealed class BenchmarkEngine
                     // Reset conversation for isolation
                     client.ResetConversation(systemPrompt);
 
+                    Debug.WriteLine($"\n[Benchmark] ════════════════════════════════════════════");
+                    Debug.WriteLine($"[Benchmark] Test: {testCase.Name} | Config: {config.ToShortString()}");
+                    Debug.WriteLine($"[Benchmark] ── User prompt ──\n{testCase.Prompt}");
+                    Debug.WriteLine($"[Benchmark] ── Expected response ──\n{testCase.ExpectedResponse}");
+                    Debug.WriteLine($"[Benchmark] ── Match mode: {testCase.MatchMode}, Threshold: {testCase.SimilarityThreshold}% ──");
+
                     // Run inference
                     InferenceResult inferenceResult;
                     try
@@ -73,6 +80,7 @@ public sealed class BenchmarkEngine
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex)
                     {
+                        Debug.WriteLine($"[Benchmark] ── INFERENCE ERROR ──\n{ex.Message}");
                         // Record failed inference as 0% match
                         inferenceResult = new InferenceResult
                         {
@@ -91,6 +99,11 @@ public sealed class BenchmarkEngine
                         inferenceResult.ResponseText,
                         testCase.MatchMode,
                         testCase.SimilarityThreshold);
+
+                    Debug.WriteLine($"[Benchmark] ── Scoring result ──");
+                    Debug.WriteLine($"[Benchmark]   Score: {score.MatchPercentage:F1}% | Pass: {score.IsPass} | Lev: {score.LevenshteinScore:F1}% | Jaccard: {score.JaccardScore:F1}% | LCS: {score.LcsScore:F1}%");
+                    Debug.WriteLine($"[Benchmark]   {score.Details}");
+                    Debug.WriteLine($"[Benchmark] ════════════════════════════════════════════\n");
 
                     var benchResult = new BenchmarkResult
                     {
