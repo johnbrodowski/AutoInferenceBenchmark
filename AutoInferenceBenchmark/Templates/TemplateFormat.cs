@@ -43,5 +43,8 @@ public enum TemplateFormat
     DeepSeek,
 
     /// <summary>Qwen: Uses ChatML-like template with qwen-specific tokens.</summary>
-    Qwen
+    Qwen,
+
+    /// <summary>OpenAI gpt-oss: uses &lt;|start|&gt;role/&lt;|message|&gt;/&lt;|end|&gt; tokens.</summary>
+    GptOss
 }

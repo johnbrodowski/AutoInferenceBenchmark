@@ -136,7 +136,7 @@ public sealed class LlamaSharpChatAdapter : IInferenceClient
 
         var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
         var beforeStrip = responseBuilder.ToString().Trim();
-        var responseText = StripThinkingTags(beforeStrip);
+        var responseText = StripTrailingStopMarkers(StripThinkingTags(beforeStrip), inferenceParams.AntiPrompts);
         if (beforeStrip != responseText)
             Debug.WriteLine($"[Benchmark:Chat] ── After StripThinkingTags ──\n{responseText}");
         Debug.WriteLine($"[Benchmark:Chat] ── Final response for scoring ──\n{responseText}");
@@ -196,7 +196,9 @@ public sealed class LlamaSharpChatAdapter : IInferenceClient
                 => new[] { "</s>", "<|user|>" },
             TemplateFormat.CommandR
                 => new[] { "<|END_OF_TURN_TOKEN|>" },
-            _ => new[] { "\nUser:\n" }
+            TemplateFormat.GptOss
+                => new[] { "<|start|>user", " User:", "\nUser:" },
+            _ => new[] { "\nUser:\n", " User:", "\nUser:" }
         };
     }
 
@@ -281,6 +283,31 @@ public sealed class LlamaSharpChatAdapter : IInferenceClient
         }
 
         return null;
+    }
+
+
+    private static string StripTrailingStopMarkers(string text, IReadOnlyList<string>? antiPrompts)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return text ?? "";
+
+        var result = text.TrimEnd();
+        if (antiPrompts != null)
+        {
+            foreach (var marker in antiPrompts)
+            {
+                if (string.IsNullOrWhiteSpace(marker))
+                    continue;
+
+                while (result.EndsWith(marker, StringComparison.Ordinal))
+                    result = result[..^marker.Length].TrimEnd();
+            }
+        }
+
+        while (result.EndsWith("User:", StringComparison.OrdinalIgnoreCase))
+            result = result[..^"User:".Length].TrimEnd();
+
+        return result;
     }
 
     /// <summary>
