@@ -4,8 +4,6 @@ public class AiSettings
 {
     public string Provider { get; set; } = "LlamaSharp Instruct (Local)";
     public string ModelPath { get; set; } = "";
-    public string AnthropicApiKey { get; set; } = "";
-    public string AnthropicModel { get; set; } = "claude-haiku-4-5-20251001";
     public float Temperature { get; set; } = 0.8f;
     public string ReasoningEffort { get; set; } = "medium";
     public int MaxTokens { get; set; } = 2048;
@@ -17,4 +15,9 @@ public class AiSettings
     public bool ShowThinking { get; set; } = false;
     public bool AutoExec { get; set; } = false;
     public string SystemPrompt { get; set; } = "";
+
+    // Benchmark defaults
+    public float BenchmarkTempMin { get; set; } = 0.1f;
+    public float BenchmarkTempMax { get; set; } = 1.0f;
+    public float BenchmarkTempStep { get; set; } = 0.1f;
 }
