@@ -105,9 +105,35 @@ public sealed class BenchmarkPanel : Panel
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 380,
-            Panel1MinSize = 200,
-            Panel2MinSize = 200
+            SplitterDistance = 380
+        };
+
+        topSplit.Layout += (_, _) =>
+        {
+            var availableWidth = topSplit.ClientSize.Width - topSplit.SplitterWidth;
+            if (availableWidth <= 0)
+            {
+                return;
+            }
+
+            var minPanelSize = Math.Min(200, availableWidth / 2);
+            if (topSplit.Panel1MinSize != minPanelSize)
+            {
+                topSplit.Panel1MinSize = minPanelSize;
+            }
+
+            if (topSplit.Panel2MinSize != minPanelSize)
+            {
+                topSplit.Panel2MinSize = minPanelSize;
+            }
+
+            var maxDistance = availableWidth - minPanelSize;
+            var targetDistance = Math.Min(380, maxDistance);
+            targetDistance = Math.Max(minPanelSize, targetDistance);
+            if (topSplit.SplitterDistance != targetDistance)
+            {
+                topSplit.SplitterDistance = targetDistance;
+            }
         };
 
         topSplit.Panel1.Controls.Add(BuildTestDatasetGroup());
