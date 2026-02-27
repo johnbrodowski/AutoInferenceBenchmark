@@ -38,7 +38,8 @@ namespace AutoInferenceBenchmark
                 GetModelPath = () => _aiModelPathBox.Text.Trim(),
                 GetSystemPrompt = () => _aiSystemBox.Text,
                 GetThreads = () => _aiSettings.Threads,
-                GetContextSize = () => _aiSettings.ContextSize
+                GetContextSize = () => _aiSettings.ContextSize,
+                GetReasoningEffort = () => _aiSettings.ReasoningEffort
             };
             _benchmarkPanel.ApplyConfigRequested += OnApplyBenchmarkConfig;
             _benchmarkTabPage.Controls.Add(_benchmarkPanel);
