@@ -77,6 +77,11 @@ public sealed class BenchmarkPanel : Panel
     /// </summary>
     public Func<int>? GetContextSize { get; set; }
 
+    /// <summary>
+    /// Func that returns current reasoning effort setting from the main form.
+    /// </summary>
+    public Func<string>? GetReasoningEffort { get; set; }
+
     public BenchmarkPanel()
     {
         Dock = DockStyle.Fill;
@@ -546,6 +551,14 @@ public sealed class BenchmarkPanel : Panel
 
         var sweep = BuildSweepConfig();
         var systemPrompt = GetSystemPrompt?.Invoke() ?? "You are a helpful assistant.";
+        var reasoningEffort = GetReasoningEffort?.Invoke();
+        if (!string.IsNullOrWhiteSpace(reasoningEffort))
+        {
+            var effort = reasoningEffort.Trim().ToLowerInvariant();
+            if (effort is "low" or "medium" or "high")
+                systemPrompt += $"\nReasoning: {effort}";
+        }
+
         int threads = GetThreads?.Invoke() ?? 10;
         int contextSize = GetContextSize?.Invoke() ?? 4096;
 
