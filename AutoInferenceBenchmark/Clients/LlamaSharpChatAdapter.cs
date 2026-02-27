@@ -318,7 +318,12 @@ public sealed class LlamaSharpChatAdapter : IInferenceClient
 
     private void ResetSession()
     {
-        var executor = new InteractiveExecutor(_context!);
+        // Clear the KV cache so position counters can restart at 0.
+        // Without this, llama.cpp rejects tokens because it expects
+        // consecutive positions (Y = X + 1) from the last cached position.
+        _context!.NativeHandle.MemoryClear();
+
+        var executor = new InteractiveExecutor(_context);
         var chatHistory = new ChatHistory();
         if (!string.IsNullOrWhiteSpace(_systemPrompt))
             chatHistory.AddMessage(AuthorRole.System, _systemPrompt);

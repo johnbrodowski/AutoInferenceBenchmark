@@ -322,6 +322,11 @@ public sealed class LlamaSharpInstructAdapter : IInferenceClient
 
     private void ResetExecutor()
     {
+        // Clear the KV cache so position counters can restart at 0.
+        // Without this, llama.cpp rejects tokens because it expects
+        // consecutive positions (Y = X + 1) from the last cached position.
+        _context!.NativeHandle.MemoryClear();
+
         // Detect instruction tokens from template format
         var prefix = "[INST]";
         var suffix = "[/INST]";
