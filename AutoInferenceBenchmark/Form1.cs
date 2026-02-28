@@ -42,6 +42,7 @@ namespace AutoInferenceBenchmark
                 GetReasoningEffort = () => _aiSettings.ReasoningEffort
             };
             _benchmarkPanel.ApplyConfigRequested += OnApplyBenchmarkConfig;
+            _benchmarkPanel.LoadUnloadRequested += async (_, _) => await AiLoadOrUnloadModelAsync();
             _benchmarkTabPage.Controls.Add(_benchmarkPanel);
 
             WireEvents();
@@ -345,15 +346,19 @@ namespace AutoInferenceBenchmark
         private void UpdateStatsLabel(LlamaSharpClient client)
         {
             _aiStatusLabel.Text = $"Done — {client.LastTokensPerSecond:F1} t/s";
-            _aiStatsLabel.Text = $"{client.LastTokensPerSecond:F1} t/s  TTFT {client.LastTimeToFirstToken:F2}s";
+            var statsText = $"{client.LastTokensPerSecond:F1} t/s  TTFT {client.LastTimeToFirstToken:F2}s";
+            _aiStatsLabel.Text = statsText;
             FadeStatsLabelColor(client.LastTokensPerSecond);
+            _benchmarkPanel?.UpdateModelStats(statsText, client.LastTokensPerSecond);
         }
 
         private void UpdateStatsLabel(LlamaSharpInstructClient client)
         {
             _aiStatusLabel.Text = $"Done — {client.LastTokensPerSecond:F1} t/s";
-            _aiStatsLabel.Text = $"{client.LastTokensPerSecond:F1} t/s  TTFT {client.LastTimeToFirstToken:F2}s";
+            var statsText = $"{client.LastTokensPerSecond:F1} t/s  TTFT {client.LastTimeToFirstToken:F2}s";
+            _aiStatsLabel.Text = statsText;
             FadeStatsLabelColor(client.LastTokensPerSecond);
+            _benchmarkPanel?.UpdateModelStats(statsText, client.LastTokensPerSecond);
         }
 
         private void FadeStatsLabelColor(float tps)
@@ -495,11 +500,15 @@ namespace AutoInferenceBenchmark
                 case IndicatorState.Unloaded:
                     _indicatorCts = ColorFader.PulseFore(_aiIndicatorLabel,
                         Color.FromArgb(160, 0, 0), Color.Red, halfPeriodMs: 1200, steps: 30);
+                    _benchmarkPanel?.SetIndicatorState("● unloaded",
+                        Color.FromArgb(160, 0, 0), Color.Red, pulse: true, enableLoad: true);
                     break;
 
                 case IndicatorState.Loading:
                     _indicatorCts = ColorFader.PulseFore(_aiIndicatorLabel,
                         Color.DarkOrange, Color.Gold, halfPeriodMs: 500, steps: 20);
+                    _benchmarkPanel?.SetIndicatorState("● loading…",
+                        Color.DarkOrange, Color.Gold, pulse: true, enableLoad: false);
                     break;
 
                 case IndicatorState.Loaded:
@@ -508,11 +517,15 @@ namespace AutoInferenceBenchmark
                     _ = ColorFader.FadeForeAsync(_aiIndicatorLabel,
                         _aiIndicatorLabel.ForeColor, Color.LimeGreen,
                         durationMs: 500, ct: loadedCts.Token);
+                    _benchmarkPanel?.SetIndicatorState("● ready",
+                        Color.LimeGreen, Color.LimeGreen, pulse: false, enableLoad: true);
                     break;
 
                 case IndicatorState.Generating:
                     _indicatorCts = ColorFader.PulseFore(_aiIndicatorLabel,
                         Color.Green, Color.LimeGreen, halfPeriodMs: 400, steps: 16);
+                    _benchmarkPanel?.SetIndicatorState("● active",
+                        Color.Green, Color.LimeGreen, pulse: true, enableLoad: false);
                     break;
             }
         }
@@ -602,7 +615,9 @@ namespace AutoInferenceBenchmark
                 long procRamMb = proc.WorkingSet64 / (1024 * 1024);
                 long totalRamMb = (long)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / (1024 * 1024));
 
-                _aiSysStatsLabel.Text = $"CPU {_lastCpuPct:F1}%   Proc RAM: {procRamMb} MB   System RAM: {totalRamMb:N0} MB";
+                var sysText = $"CPU {_lastCpuPct:F1}%   Proc RAM: {procRamMb} MB   System RAM: {totalRamMb:N0} MB";
+                _aiSysStatsLabel.Text = sysText;
+                _benchmarkPanel?.UpdateSysStats(sysText);
 
                 var cpuColor = _lastCpuPct > 70f ? Color.OrangeRed
                              : _lastCpuPct > 40f ? Color.DarkOrange

@@ -37,10 +37,17 @@ public sealed class BenchmarkPanel : Panel
     // ── Execution ───────────────────────────────────────────────────────
     private Button _btnStart = new();
     private Button _btnStop = new();
+    private Button _btnLoad = new();
     private ProgressBar _progressBar = new();
     private Label _lblProgress = new();
     private Label _lblEta = new();
     private Label _lblBestSoFar = new();
+
+    // ── Status bar ───────────────────────────────────────────────────────
+    private Label _lblIndicator = new();
+    private Label _lblModelStats = new();
+    private Label _lblSysStats = new();
+    private CancellationTokenSource? _indicatorCts;
 
     // ── Results ─────────────────────────────────────────────────────────
     private DataGridView _resultsGrid = new();
@@ -56,6 +63,9 @@ public sealed class BenchmarkPanel : Panel
 
     /// <summary>Raised when the user clicks "Apply Best Config" so Form1 can update its settings.</summary>
     public event EventHandler<InferenceConfig>? ApplyConfigRequested;
+
+    /// <summary>Raised when the user clicks Load/Unload so Form1 can reuse its model loading logic.</summary>
+    public event EventHandler? LoadUnloadRequested;
 
     /// <summary>
     /// Func that returns the current model path from the main form.
@@ -102,11 +112,66 @@ public sealed class BenchmarkPanel : Panel
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // PUBLIC API — called by Form1 to keep indicator / stats in sync
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Updates the indicator label to match the chat tab's state.
+    /// Call this from Form1.AiSetIndicatorState.
+    /// </summary>
+    public void SetIndicatorState(string text, Color colorA, Color colorB, bool pulse, bool enableLoad = true)
+    {
+        if (InvokeRequired) { BeginInvoke(() => SetIndicatorState(text, colorA, colorB, pulse, enableLoad)); return; }
+
+        _indicatorCts?.Cancel();
+        _indicatorCts?.Dispose();
+        _indicatorCts = null;
+
+        _lblIndicator.Text = text;
+        _btnLoad.Enabled = enableLoad;
+        _btnLoad.Text = text.Contains("ready") || text.Contains("active") ? "Unload" : "Load";
+
+        if (pulse)
+            _indicatorCts = ColorFader.PulseFore(_lblIndicator, colorA, colorB);
+        else
+        {
+            var fadeCts = new CancellationTokenSource();
+            _indicatorCts = fadeCts;
+            _ = ColorFader.FadeForeAsync(_lblIndicator, _lblIndicator.ForeColor, colorA, durationMs: 500, ct: fadeCts.Token);
+        }
+    }
+
+    /// <summary>Updates the system stats label (CPU / RAM).</summary>
+    public void UpdateSysStats(string text)
+    {
+        if (InvokeRequired) { BeginInvoke(() => UpdateSysStats(text)); return; }
+        _lblSysStats.Text = text;
+    }
+
+    /// <summary>Updates the model performance stats label (t/s, TTFT).</summary>
+    public void UpdateModelStats(string text, float tps = 0f)
+    {
+        if (InvokeRequired) { BeginInvoke(() => UpdateModelStats(text, tps)); return; }
+        _lblModelStats.Text = text;
+        if (!string.IsNullOrEmpty(text))
+        {
+            var target = tps > 15f ? Color.LimeGreen
+                       : tps > 5f  ? Color.DarkOrange
+                                    : Color.OrangeRed;
+            _ = ColorFader.FadeForeAsync(_lblModelStats, _lblModelStats.ForeColor, target, durationMs: 400);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // UI CONSTRUCTION
     // ═══════════════════════════════════════════════════════════════════
 
     private void BuildUI()
     {
+        // ── Status bar at bottom ─────────────────────────────────────
+        var statusBar = BuildStatusBar();
+        statusBar.Dock = DockStyle.Bottom;
+
         var mainSplit = new SplitContainer
         {
             Dock = DockStyle.Fill,
@@ -161,6 +226,7 @@ public sealed class BenchmarkPanel : Panel
         mainSplit.Panel2.Controls.Add(BuildResultsGroup());
 
         Controls.Add(mainSplit);
+        Controls.Add(statusBar);
     }
 
     private GroupBox BuildTestDatasetGroup()
@@ -170,7 +236,6 @@ public sealed class BenchmarkPanel : Panel
         _testGrid = new DataGridView
         {
             Dock = DockStyle.Fill,
-            ReadOnly = true,
             AllowUserToAddRows = false,
             AllowUserToDeleteRows = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
@@ -178,12 +243,28 @@ public sealed class BenchmarkPanel : Panel
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
             RowHeadersVisible = false
         };
+
+        // Enabled checkbox (editable)
+        var chkCol = new DataGridViewCheckBoxColumn
+        {
+            Name = "Enabled", HeaderText = "", Width = 30, AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+            FillWeight = 1, Resizable = DataGridViewTriState.False
+        };
+        _testGrid.Columns.Add(chkCol);
         _testGrid.Columns.Add("Name", "Name");
         _testGrid.Columns.Add("Difficulty", "Difficulty");
         _testGrid.Columns.Add("MatchMode", "Match");
         _testGrid.Columns.Add("Threshold", "Threshold");
         _testGrid.Columns["Threshold"]!.DefaultCellStyle.Format = "F0";
-        _testGrid.CellDoubleClick += (_, _) => EditSelectedTest();
+
+        // Only the checkbox column is editable
+        _testGrid.CellBeginEdit += (_, e) => { if (e.ColumnIndex != 0) e.Cancel = true; };
+        _testGrid.CurrentCellDirtyStateChanged += (_, _) =>
+        {
+            if (_testGrid.IsCurrentCellDirty) _testGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+        };
+        _testGrid.CellValueChanged += (_, e) => { if (e.ColumnIndex == 0 && e.RowIndex >= 0) UpdateConfigCount(); };
+        _testGrid.CellDoubleClick += (_, e) => { if (e.ColumnIndex != 0) EditSelectedTest(); };
 
         var btnPanel = new FlowLayoutPanel
         {
@@ -372,6 +453,28 @@ public sealed class BenchmarkPanel : Panel
         return gb;
     }
 
+    private Panel BuildStatusBar()
+    {
+        var bar = new FlowLayoutPanel
+        {
+            Height = 28,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = false,
+            Padding = new Padding(4, 4, 4, 0)
+        };
+
+        _lblIndicator = new Label { Text = "\u25cf unloaded", AutoSize = true, ForeColor = Color.Red, Margin = new Padding(2, 2, 8, 0) };
+        _btnLoad = new Button { Text = "Load", Width = 65, Height = 22 };
+        _btnLoad.Click += (_, _) => LoadUnloadRequested?.Invoke(this, EventArgs.Empty);
+
+        _lblModelStats = new Label { Text = "", AutoSize = true, Margin = new Padding(12, 2, 4, 0) };
+        _lblSysStats = new Label { Text = "", AutoSize = true, ForeColor = SystemColors.ControlText, Margin = new Padding(12, 2, 4, 0) };
+
+        bar.Controls.AddRange([_lblIndicator, _btnLoad, _lblModelStats, _lblSysStats]);
+        return bar;
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════
@@ -409,7 +512,7 @@ public sealed class BenchmarkPanel : Panel
     {
         _testGrid.Rows.Clear();
         foreach (var tc in _dataset.TestCases)
-            _testGrid.Rows.Add(tc.Name, tc.Difficulty.ToString(), tc.MatchMode.ToString(), tc.SimilarityThreshold);
+            _testGrid.Rows.Add(true, tc.Name, tc.Difficulty.ToString(), tc.MatchMode.ToString(), tc.SimilarityThreshold);
     }
 
     private void AddTest()
@@ -520,13 +623,37 @@ public sealed class BenchmarkPanel : Panel
         {
             var sweep = BuildSweepConfig();
             int count = ParameterSweepGenerator.Count(sweep);
-            int totalRuns = count * _dataset.TestCases.Count;
-            _lblTotalConfigs.Text = $"Configs: {count}  |  Total runs: {totalRuns}";
+            int enabledTests = GetEnabledTestCount();
+            int totalRuns = count * enabledTests;
+            _lblTotalConfigs.Text = $"Configs: {count}  |  Tests: {enabledTests}/{_dataset.TestCases.Count}  |  Total runs: {totalRuns}";
         }
         catch
         {
             _lblTotalConfigs.Text = "Configs: (error)";
         }
+    }
+
+    private int GetEnabledTestCount()
+    {
+        int count = 0;
+        for (int i = 0; i < _testGrid.Rows.Count; i++)
+        {
+            if (_testGrid.Rows[i].Cells[0].Value is true)
+                count++;
+        }
+        return count;
+    }
+
+    /// <summary>Returns a filtered dataset containing only the checked test cases.</summary>
+    private TestDataset GetEnabledDataset()
+    {
+        var filtered = new TestDataset { Name = _dataset.Name };
+        for (int i = 0; i < _testGrid.Rows.Count && i < _dataset.TestCases.Count; i++)
+        {
+            if (_testGrid.Rows[i].Cells[0].Value is true)
+                filtered.TestCases.Add(_dataset.TestCases[i]);
+        }
+        return filtered;
     }
 
     private void UpdateSweepVisibility()
@@ -553,9 +680,10 @@ public sealed class BenchmarkPanel : Panel
             return;
         }
 
-        if (_dataset.TestCases.Count == 0)
+        var enabledDataset = GetEnabledDataset();
+        if (enabledDataset.TestCases.Count == 0)
         {
-            MessageBox.Show(FindForm(), "Add at least one test case.", "No Tests",
+            MessageBox.Show(FindForm(), "Enable at least one test case.", "No Tests",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -608,7 +736,7 @@ public sealed class BenchmarkPanel : Panel
             });
 
             _lastSummary = await engine.RunBenchmarkAsync(
-                client, modelPath, systemPrompt, _dataset, sweep, progress, ct);
+                client, modelPath, systemPrompt, enabledDataset, sweep, progress, ct);
 
             // Show final results
             ShowSummary(_lastSummary);
